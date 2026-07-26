@@ -1,50 +1,48 @@
 #!/bin/bash
 
-# 显示菜单
+BACKUP_DIR="./docker_images_backup"
+
+mkdir -p "$BACKUP_DIR"
+
 echo "请选择操作："
-echo "1) 导出镜像 (docker save)"
-echo "2) 导入镜像 (docker load)"
+echo "1) 自动导出所有镜像"
+echo "2) 自动导入所有镜像"
 read -p "请输入数字选择: " choice
 
-# 导出镜像
+# 自动导出所有镜像
 if [ "$choice" == "1" ]; then
-    echo "当前镜像列表："
-    docker images --format "{{.Repository}}:{{.Tag}}  {{.ID}}  {{.Size}}"
+    echo "正在获取所有镜像列表..."
+    IMAGES=$(docker images --format "{{.Repository}}:{{.Tag}}")
 
-    read -p "请输入要导出的镜像名（例如 nginx:latest）: " img
-    if [ -z "$img" ]; then
-        echo "镜像名不能为空"
+    if [ -z "$IMAGES" ]; then
+        echo "没有找到任何镜像"
         exit 1
     fi
 
-    # 自动生成文件名
-    filename=$(echo "$img" | sed 's/:/_/').tar
+    echo "开始导出所有镜像到目录: $BACKUP_DIR"
 
-    # 防止覆盖
-    if [ -f "$filename" ]; then
-        echo "文件 $filename 已存在，已自动加时间戳避免覆盖"
-        filename="${filename%.tar}_$(date +%Y%m%d%H%M%S).tar"
-    fi
+    for IMG in $IMAGES; do
+        SAFE_NAME=$(echo "$IMG" | sed 's|/|_|g; s|:|_|g')
+        FILE="$BACKUP_DIR/${SAFE_NAME}.tar"
 
-    echo "正在导出镜像到 $filename ..."
-    docker save -o "$filename" "$img"
+        echo "导出镜像: $IMG → $FILE"
+        docker save -o "$FILE" "$IMG"
+    done
 
-    echo "导出完成：$filename"
+    echo "所有镜像已导出完成"
     exit 0
 fi
 
-# 导入镜像
+# 自动导入所有镜像
 if [ "$choice" == "2" ]; then
-    read -p "请输入要导入的镜像文件路径（例如 nginx.tar）: " file
-    if [ ! -f "$file" ]; then
-        echo "文件不存在：$file"
-        exit 1
-    fi
+    echo "从目录 $BACKUP_DIR 导入所有镜像..."
 
-    echo "正在导入镜像..."
-    docker load -i "$file"
+    for FILE in $BACKUP_DIR/*.tar; do
+        echo "导入镜像文件: $FILE"
+        docker load -i "$FILE"
+    done
 
-    echo "导入完成"
+    echo "所有镜像已导入完成"
     exit 0
 fi
 
