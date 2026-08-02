@@ -73,8 +73,6 @@ detect_firewall(){
     else
         error "未检测到可用防火墙"
     fi
-
-    ok "Ban Action: ${BANACTION}"
 }
 
 detect_ipv6(){
@@ -120,9 +118,6 @@ EOF
 
 configure_fail2ban(){
     mkdir -p /etc/fail2ban/jail.d
-
-    detect_firewall
-    detect_ipv6
 
 cat > /etc/fail2ban/jail.d/sshd-production.local <<EOF
 [DEFAULT]
@@ -176,6 +171,8 @@ start_fail2ban(){
 install_fail2ban(){
     check_system
     detect_ssh
+    detect_ipv6
+    detect_firewall
 
     echo
     echo "=============================="
