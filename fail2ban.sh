@@ -181,6 +181,7 @@ enabled = true
 port = ${SSH_PORT}
 mode = aggressive
 maxretry = 3
+journalmatch = _SYSTEMD_UNIT=${SSH_SERVICE}.service
 
 [recidive]
 enabled = true
