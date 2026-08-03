@@ -1,6 +1,6 @@
 #!/bin/bash
 # ==============================================================================
-# Fail2ban Manager (Optimized & Clean Version)
+# Fail2ban Manager (Production Fixed Version)
 #
 # 支持:
 #   Debian 11/12/13
@@ -48,11 +48,7 @@ check_system(){
 }
 
 check_installed(){
-    if dpkg -s fail2ban >/dev/null 2>&1; then
-        warn "Fail2ban 已安装"
-        return 0
-    fi
-    return 1
+    dpkg -s fail2ban >/dev/null 2>&1
 }
 
 detect_ssh(){
@@ -73,12 +69,12 @@ detect_ssh(){
 }
 
 detect_firewall(){
-    if command -v nft >/dev/null; then
+    if command -v nft >/dev/null 2>&1; then
         BANACTION="nftables-multiport"
-    elif command -v iptables >/dev/null; then
+    elif command -v iptables >/dev/null 2>&1; then
         BANACTION="iptables-multiport"
     else
-        error "未检测到可用防火墙"
+        error "未检测到防火墙"
     fi
     ok "Ban Action: ${BANACTION}"
 }
@@ -100,9 +96,9 @@ configure_journal(){
     mkdir -p /etc/systemd/journald.conf.d
     cat > /etc/systemd/journald.conf.d/99-log-limit.conf <<EOF
 [Journal]
-SystemMaxUse=1024M
-SystemMaxFileSize=50M
-MaxRetentionSec=180day
+SystemMaxUse=300M
+SystemMaxFileSize=20M
+MaxRetentionSec=30day
 Compress=yes
 EOF
     systemctl restart systemd-journald
@@ -124,7 +120,7 @@ LogLevel INFO
 EOF
 
     sshd -t
-    systemctl restart "$SSH_SERVICE"
+    systemctl reload "$SSH_SERVICE"
     ok "SSH配置生效"
 }
 
@@ -138,7 +134,7 @@ configure_fail2ban(){
 [DEFAULT]
 backend = systemd
 banaction = ${BANACTION}
-logtarget = SYSLOG
+logtarget = SYSTEMD
 ignoreip = 127.0.0.1/8 ::1
 findtime = 10m
 bantime = 48h
@@ -194,19 +190,23 @@ install_fail2ban(){
     echo "=============================="
     echo " 即将安装 Fail2ban 并加固 SSH"
     echo "=============================="
-    echo "SSH服务     : ${SSH_SERVICE}"
-    echo "SSH端口     : ${SSH_PORT}"
-    echo "Ban Action  : ${BANACTION}"
-    echo "Ban Time    : 48h"
-    echo "Find Time   : 10m"
-    echo "Max Retry   : 3"
+    echo "SSH服务    : ${SSH_SERVICE}"
+    echo "SSH端口    : ${SSH_PORT}"
+    echo "Ban Action : ${BANACTION}"
+    echo "Ban Time   : 48h"
+    echo "Find Time  : 10m"
+    echo "Max Retry  : 3"
     echo "=============================="
     echo
 
     read -p "确认继续? (y/N): " confirm
     [[ "$confirm" != "y" && "$confirm" != "Y" ]] && exit 0
 
-    ! check_installed && install_packages
+    if ! check_installed; then
+        install_packages
+    else
+        warn "Fail2ban已安装，跳过安装"
+    fi
 
     backup_ssh
     configure_journal
@@ -220,7 +220,9 @@ install_fail2ban(){
 
 uninstall_fail2ban(){
     echo
-    echo "将删除 Fail2ban 软件与所有配置"
+    echo "=============================="
+    echo " 卸载 Fail2ban"
+    echo "=============================="
     echo
     read -p "确认卸载? 输入 yes: " confirm
     [ "$confirm" != "yes" ] && exit 0
@@ -327,7 +329,7 @@ menu(){
             8) restart_fail2ban ;;
             9) view_log ;;
             10) exit 0 ;;
-            *) error "无效选择" ;;
+            *) warn "无效选择" ;;
         esac
         echo
         read -p "按回车继续..."
