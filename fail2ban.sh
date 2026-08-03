@@ -333,8 +333,7 @@ show_banned(){
 
     info "当前封禁状态"
 
-    fail2ban-client status sshd
-
+    fail2ban-client status sshd || true
     echo
 
     read -p "查看详细封禁IP? (y/N): " confirm
@@ -366,8 +365,13 @@ unban_ip(){
 
 view_log(){
     info "实时查看Fail2ban日志"
+    echo "按 Ctrl+C 返回菜单"
 
-    journalctl -u fail2ban -f
+    trap 'echo; ok "已退出日志查看"' INT
+
+    journalctl -u fail2ban -n 100 -f
+
+    trap - INT
 }
 
 restart_fail2ban(){
