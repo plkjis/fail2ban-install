@@ -101,7 +101,8 @@ enabled = true
 port = $SSH_PORT
 mode = aggressive
 maxretry = 3
-journalmatch = _SYSTEMD_UNIT=${SSH_SERVICE}.service
+backend = systemd
+journalmatch = _SYSTEMD_UNIT=ssh.service
 
 [recidive]
 enabled = true
