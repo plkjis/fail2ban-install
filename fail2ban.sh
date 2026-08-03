@@ -45,7 +45,7 @@ detect_firewall(){
     elif [ -f /etc/fail2ban/action.d/iptables-multiport.conf ]; then
         BANACTION="iptables-multiport"
     else
-        warn "未找到防火墙 action，使用 iptables-multiport 作为 fallback"
+        warn "未找到防火墙 action，使用 iptables-multiport"
         BANACTION="iptables-multiport"
     fi
     ok "Ban Action: $BANACTION"
@@ -121,9 +121,14 @@ test_fail2ban(){
 }
 
 start_fail2ban(){
+    # ★★★ Debian 12 fail2ban.sock 修复 ★★★
+    mkdir -p /run/fail2ban
+    chmod 755 /run/fail2ban
+
     systemctl enable fail2ban
     systemctl restart fail2ban
     sleep 2
+
     if systemctl is-active --quiet fail2ban; then
         ok "Fail2ban运行正常"
     else
@@ -141,6 +146,7 @@ reload_fail2ban(){
 install_fail2ban(){
     check_system
     detect_ssh
+
     echo "=============================="
     echo " Fail2ban安装确认"
     echo "=============================="
@@ -151,17 +157,20 @@ install_fail2ban(){
     echo "=============================="
     read -p "继续安装? (y/N): " c
     [[ "$c" != "y" && "$c" != "Y" ]] && exit 0
+
     if ! check_installed; then
         install_packages
     else
         warn "Fail2ban已安装，将覆盖配置"
     fi
+
     detect_firewall
     configure_journal
     configure_ssh
     configure_fail2ban
     test_fail2ban
     start_fail2ban
+
     ok "Fail2ban安装完成"
 }
 
@@ -200,8 +209,15 @@ unban_ip(){
 }
 
 view_log(){
-    info "实时日志 Ctrl+C返回"
+    info "实时日志 Ctrl+C 返回菜单"
+
+    set +e
+    trap 'echo; ok "已退出日志查看"; trap - INT; return' INT
+
     journalctl -u fail2ban -n 100 -f
+
+    trap - INT
+    set -e
 }
 
 menu(){
