@@ -171,7 +171,7 @@ configure_fail2ban(){
 allowipv6 = ${ALLOWIPV6}
 backend = systemd
 banaction = ${BANACTION}
-logtarget = SYSTEMD
+logtarget = SYSLOG
 ignoreip = ${IGNOREIP}
 findtime = 10m
 bantime = 48h
@@ -185,7 +185,7 @@ maxretry = 3
 [recidive]
 enabled = true
 backend = systemd
-journalmatch = _SYSTEMD_UNIT=fail2ban.service
+journalmatch = _SYSTEMD_UNIT=${SSH_SERVICE}.service
 findtime = 7d
 maxretry = 5
 bantime = 30d
