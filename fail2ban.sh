@@ -145,7 +145,6 @@ configure_ssh(){
 
     if [ -f "$SSH_HARDEN" ]; then
         cp "$SSH_HARDEN" "${SSH_HARDEN}.backup.$(date +%F-%H%M%S)"
-        ok "已备份旧SSH配置"
     fi
 
     cat > "$SSH_HARDEN" <<EOF
