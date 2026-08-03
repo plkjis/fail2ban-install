@@ -87,15 +87,16 @@ detect_ssh(){
 }
 
 detect_firewall(){
-    if command -v nft >/dev/null; then
-        BANACTION="nftables-multiport"
-    elif command -v ufw >/dev/null && ufw status 2>/dev/null | grep -qi active; then
+    if command -v ufw >/dev/null && ufw status 2>/dev/null | grep -qi active; then
         BANACTION="ufw"
+    elif command -v nft >/dev/null && nft list ruleset >/dev/null 2>&1; then
+        BANACTION="nftables-multiport"
     elif command -v iptables >/dev/null; then
         BANACTION="iptables-multiport"
     else
         error "未检测到可用防火墙"
     fi
+
     ok "Ban Action: ${BANACTION}"
 }
 
@@ -122,6 +123,22 @@ backup_ssh(){
     BACKUP="/etc/ssh/sshd_config.backup.$(date +%F-%H%M%S)"
     cp /etc/ssh/sshd_config "$BACKUP"
     ok "SSH备份: $BACKUP"
+}
+
+configure_journal(){
+    mkdir -p /etc/systemd/journald.conf.d
+
+    cat > /etc/systemd/journald.conf.d/99-log-limit.conf <<EOF
+[Journal]
+SystemMaxUse=1024M
+SystemMaxFileSize=50M
+MaxRetentionSec=180day
+Compress=yes
+EOF
+
+    systemctl restart systemd-journald
+
+    ok "系统日志限制完成"
 }
 
 configure_ssh(){
@@ -156,7 +173,7 @@ configure_fail2ban(){
 allowipv6 = ${ALLOWIPV6}
 backend = systemd
 banaction = ${BANACTION}
-logtarget = /var/log/fail2ban.log
+logtarget = SYSTEMD
 ignoreip = ${IGNOREIP}
 findtime = 10m
 bantime = 48h
@@ -169,8 +186,8 @@ maxretry = 3
 
 [recidive]
 enabled = true
-backend = auto
-logpath = /var/log/fail2ban.log
+backend = systemd
+journalmatch = _SYSTEMD_UNIT=fail2ban.service
 findtime = 7d
 maxretry = 5
 bantime = 30d
@@ -232,6 +249,7 @@ install_fail2ban(){
         warn "Fail2ban 已安装，跳过软件安装"
     fi
     backup_ssh
+    configure_journal
     configure_ssh
     configure_fail2ban
     test_fail2ban
