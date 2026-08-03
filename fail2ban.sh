@@ -45,10 +45,25 @@ detect_firewall(){
     elif [ -f /etc/fail2ban/action.d/iptables-multiport.conf ]; then
         BANACTION="iptables-multiport"
     else
-        warn "未找到 nftables/iptables action，使用内置 fallback"
+        warn "未找到 nftables/iptables action，使用 fallback"
         BANACTION="iptables-multiport"
     fi
     ok "Ban Action: $BANACTION"
+}
+
+configure_journal(){
+    mkdir -p /etc/systemd/journald.conf.d
+    cat >/etc/systemd/journald.conf.d/99-log-limit.conf <<EOF
+[Journal]
+SystemMaxUse=1G
+SystemMaxFileSize=50M
+MaxRetentionSec=180day
+Compress=yes
+EOF
+    systemctl restart systemd-journald
+    journalctl --vacuum-time=180d
+    journalctl --vacuum-size=1G
+    ok "系统日志限制完成"
 }
 
 configure_ssh(){
@@ -74,6 +89,7 @@ configure_fail2ban(){
     cat > /etc/fail2ban/jail.d/sshd-production.local <<EOF
 [DEFAULT]
 backend = systemd
+logtarget = SYSLOG
 banaction = $BANACTION
 ignoreip = 127.0.0.1/8 ::1
 findtime = 10m
@@ -141,6 +157,7 @@ install_fail2ban(){
     fi
 
     detect_firewall
+    configure_journal
     configure_ssh
     configure_fail2ban
     test_fail2ban
