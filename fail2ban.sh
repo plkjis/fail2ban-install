@@ -87,9 +87,7 @@ detect_ssh(){
 }
 
 detect_firewall(){
-    if command -v ufw >/dev/null && ufw status 2>/dev/null | grep -qi active; then
-        BANACTION="ufw"
-    elif command -v nft >/dev/null && nft list ruleset >/dev/null 2>&1; then
+    if command -v nft >/dev/null; then
         BANACTION="nftables-multiport"
     elif command -v iptables >/dev/null; then
         BANACTION="iptables-multiport"
