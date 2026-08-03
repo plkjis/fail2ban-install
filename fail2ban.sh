@@ -1,19 +1,20 @@
 #!/bin/bash
 # ==============================================================================
-# Fail2ban Manager (Production Fixed Version)
+# Fail2ban Manager (Final Integrated Production Version)
 #
 # 支持:
 #   Debian 11/12/13
 #   Ubuntu 20.04/22.04/24.04
 #
 # 功能:
-#   1. 安装 Fail2ban
-#   2. 卸载 Fail2ban
-#   3. 更新配置
-#   4. 查看状态
-#   5. 查看封禁IP
-#   6. 手动封禁/解封
-#   7. 查看日志
+#   1. 安装 Fail2ban（含 SSH 加固）
+#   2. 卸载 Fail2ban（完整恢复 SSH）
+#   3. 查看状态
+#   4. 查看封禁IP
+#   5. 手动封禁/解封
+#   6. 查看实时日志（Ctrl+C 返回菜单）
+#   7. 重载配置
+#   8. 重启 Fail2ban
 #
 # 场景:
 #   公网 VPS
@@ -53,6 +54,7 @@ check_installed(){
 
 detect_ssh(){
     command -v sshd >/dev/null || error "未找到 sshd"
+
     SSH_PORT=$(sshd -T 2>/dev/null | awk '/^port /{print $2}' | head -1)
     [ -z "$SSH_PORT" ] && SSH_PORT=22
 
@@ -69,14 +71,20 @@ detect_ssh(){
 }
 
 detect_firewall(){
-    if command -v nft >/dev/null 2>&1; then
+    # 不检测 ufw，因为 fail2ban 默认不使用 ufw
+    if [ -f /etc/fail2ban/action.d/nftables-multiport.conf ]; then
         BANACTION="nftables-multiport"
-    elif command -v iptables >/dev/null 2>&1; then
-        BANACTION="iptables-multiport"
-    else
-        error "未检测到防火墙"
+        ok "Ban Action: nftables-multiport"
+        return
     fi
-    ok "Ban Action: ${BANACTION}"
+
+    if [ -f /etc/fail2ban/action.d/iptables-multiport.conf ]; then
+        BANACTION="iptables-multiport"
+        ok "Ban Action: iptables-multiport"
+        return
+    fi
+
+    error "Fail2ban 未找到可用的防火墙 action（nftables / iptables）"
 }
 
 install_packages(){
@@ -87,9 +95,35 @@ install_packages(){
 }
 
 backup_ssh(){
-    BACKUP="/etc/ssh/sshd_config.backup.$(date +%F-%H%M%S)"
-    cp /etc/ssh/sshd_config "$BACKUP"
-    ok "SSH备份: $BACKUP"
+    TIMESTAMP=$(date +%F-%H%M%S)
+
+    cp /etc/ssh/sshd_config /etc/ssh/sshd_config.backup.$TIMESTAMP
+
+    if [ -d /etc/ssh/sshd_config.d ]; then
+        cp -r /etc/ssh/sshd_config.d /etc/ssh/sshd_config.d.backup.$TIMESTAMP
+    fi
+
+    ok "SSH配置已完整备份: $TIMESTAMP"
+}
+
+restore_ssh(){
+    if ls /etc/ssh/sshd_config.backup.* 1>/dev/null 2>&1; then
+        LATEST=$(ls -t /etc/ssh/sshd_config.backup.* | head -1)
+        cp "$LATEST" /etc/ssh/sshd_config
+        ok "已恢复 SSH 主配置: $LATEST"
+    fi
+
+    if ls /etc/ssh/sshd_config.d.backup.* 1>/dev/null 2>&1; then
+        LATEST_DIR=$(ls -t /etc/ssh/sshd_config.d.backup.* | head -1)
+        rm -rf /etc/ssh/sshd_config.d
+        cp -r "$LATEST_DIR" /etc/ssh/sshd_config.d
+        ok "已恢复 SSH 子配置目录: $LATEST_DIR"
+    fi
+
+    if command -v sshd >/dev/null 2>&1; then
+        sshd -t && systemctl reload ssh || systemctl reload sshd
+        ok "SSH 已重新加载"
+    fi
 }
 
 configure_journal(){
@@ -134,7 +168,7 @@ configure_fail2ban(){
 [DEFAULT]
 backend = systemd
 banaction = ${BANACTION}
-logtarget = SYSTEMD
+logtarget = SYSTEMD-JOURNAL
 ignoreip = 127.0.0.1/8 ::1
 findtime = 10m
 bantime = 48h
@@ -149,7 +183,7 @@ journalmatch = _SYSTEMD_UNIT=${SSH_SERVICE}.service
 [recidive]
 enabled = true
 backend = systemd
-journalmatch = _SYSTEMD_UNIT=${SSH_SERVICE}.service
+journalmatch = _SYSTEMD_UNIT=fail2ban.service
 findtime = 7d
 maxretry = 5
 bantime = 30d
@@ -202,11 +236,7 @@ install_fail2ban(){
     read -p "确认继续? (y/N): " confirm
     [[ "$confirm" != "y" && "$confirm" != "Y" ]] && exit 0
 
-    if ! check_installed; then
-        install_packages
-    else
-        warn "Fail2ban已安装，跳过安装"
-    fi
+    ! check_installed && install_packages
 
     backup_ssh
     configure_journal
@@ -221,7 +251,7 @@ install_fail2ban(){
 uninstall_fail2ban(){
     echo
     echo "=============================="
-    echo " 卸载 Fail2ban"
+    echo " 卸载 Fail2ban（含 SSH 完整恢复）"
     echo "=============================="
     echo
     read -p "确认卸载? 输入 yes: " confirm
@@ -235,10 +265,12 @@ uninstall_fail2ban(){
 
     rm -rf /etc/fail2ban /run/fail2ban /var/log/fail2ban.log
 
+    restore_ssh
+
     systemctl daemon-reload
     systemctl reset-failed fail2ban || true
 
-    ok "Fail2ban已卸载"
+    ok "Fail2ban已卸载并恢复 SSH"
 }
 
 show_status(){
@@ -284,12 +316,16 @@ unban_ip(){
 }
 
 view_log(){
-    info "实时查看Fail2ban日志 (Ctrl+C 退出)"
-    trap 'echo; ok "已退出日志查看"' INT
+    info "实时查看Fail2ban日志 (Ctrl+C 返回菜单)"
+    echo
+
     set +e
+
+    trap 'echo; ok "已退出日志查看"; trap - INT; return' INT
+
     journalctl -u fail2ban -n 100 -f
+
     set -e
-    trap - INT
 }
 
 restart_fail2ban(){
@@ -307,7 +343,7 @@ menu(){
         echo " Fail2ban 管理工具"
         echo "================================="
         echo "1) 安装 Fail2ban"
-        echo "2) 卸载 Fail2ban"
+        echo "2) 卸载 Fail2ban（恢复 SSH）"
         echo "3) 查看状态"
         echo "4) 查看封禁IP"
         echo "5) 手动封禁IP"
