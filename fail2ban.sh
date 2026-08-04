@@ -18,6 +18,13 @@ apt-get update -y
 echo "[INFO] 安装 Fail2ban..."
 apt-get install -y fail2ban python3-systemd
 
+echo "[INFO] 修复 allowipv6 WARNING..."
+# 官方推荐：使用 fail2ban.local 覆盖默认配置
+cat >/etc/fail2ban/fail2ban.local <<EOF
+[Definition]
+allowipv6 = auto
+EOF
+
 echo "[INFO] 创建 Fail2ban SSH 配置..."
 mkdir -p /etc/fail2ban/jail.d
 cat >/etc/fail2ban/jail.d/sshd.local <<EOF
@@ -39,7 +46,7 @@ cat >/etc/systemd/journald.conf.d/99-log-limit.conf <<EOF
 [Journal]
 SystemMaxUse=1G
 SystemMaxFileSize=50M
-MaxRetentionSec=180day
+MaxRetentionSec=90day
 Compress=yes
 EOF
 systemctl restart systemd-journald
@@ -61,7 +68,7 @@ if systemctl is-active --quiet fail2ban; then
     echo "失败次数 : 3"
     echo "检测时间 : 10分钟"
     echo "封禁时间 : 72小时"
-    echo "日志保留 : 180天 / 最大1G"
+    echo "日志保留 : 90天 / 最大1G"
     echo
     echo "状态: fail2ban-client status sshd"
     echo "封禁IP: fail2ban-client get sshd banip"
